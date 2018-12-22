@@ -134,8 +134,8 @@ class Window(QMainWindow):
         self.corners[:,:,0]=self.inputImage
         self.corners[:,:,1]=self.inputImage
         self.corners[:,:,2]=self.inputImage
-
-        self.content = ExampleContent(self, self.inputFile)
+        cv2.imwrite('processed.png', self.corners)
+        self.content = ExampleContent(self, 'processed.png')
         self.setCentralWidget(self.content)
 
     
@@ -245,15 +245,16 @@ class Window(QMainWindow):
     def calculateThres(self,R):
         h,w = self.inputImage.shape
         
-        t = 500000
+        t = 400000
         for x in range(h):
             for y in range(w):
                 if R[x,y] > t:
                     self.corners[x,y] = [244,0,0]
                     print(str(x) + ' ' + str(y) + ' ' + str (R[x,y]))
        
-        cv2.imshow('resaa', self.corners)
-        cv2.waitKey(0)
+        cv2.imwrite('resultA.jpg', self.corners)
+        self.content = ExampleContent(self, self.inputFile,'resultA.jpg')
+        self.setCentralWidget(self.content)
      
         
     def createStructureTensor(self,Ix,Iy):
