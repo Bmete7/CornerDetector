@@ -88,6 +88,7 @@ class Window(QMainWindow):
         exitAct = QAction(QIcon('exit.png'), '&Exit' , self)
         importAct = QAction('&Open Input' , self)        
         cornerAction = QAction('&Harris corner Detector' , self)
+        segmentationAction = QAction('&Segmentate' , self)
         
         exitAct.setShortcut('Ctrl+Q')
         exitAct.setStatusTip('Exit application')
@@ -95,8 +96,8 @@ class Window(QMainWindow):
                 
         exitAct.triggered.connect(self.closeApp)
         importAct.triggered.connect(self.importInput)
-        
         cornerAction.triggered.connect(self.cornerAction)
+        segmentationAction.triggered.connect(self.segmentationAction)
         
         self.statusBar()
         
@@ -109,7 +110,9 @@ class Window(QMainWindow):
         self.setCentralWidget(self.content)
         
         self.cornerToolbar = self.addToolBar('Harris Corner Detection')
+        self.cornerToolbar2 = self.addToolBar('Segmentate')
         self.cornerToolbar.addAction(cornerAction)
+        self.cornerToolbar2.addAction(segmentationAction)
         
         self.setWindowTitle(self.title)
         self.setStyleSheet('QMainWindow{background-color: darkgray;border: 1px solid black;}')
@@ -146,6 +149,85 @@ class Window(QMainWindow):
         self.calculateGradients()
     
     
+    def otsuThresholding(self):
+        # Trying to maximize between class variance
+        # By iterating over all possible threshold values
+        h,w = self.inputImage.shape
+        histog = np.zeros((256,1), dtype ='int32')
+        for x in range(h):
+            for y in range(w):
+                histog[self.inputImage[x,y]]+= 1
+        PdfHist = histog / (h*w)
+        CdfHist = np.zeros((256,1), dtype ='float64')
+        prevCdf = 0
+        for i in range(256):
+            CdfHist[i] = prevCdf + PdfHist[i]
+            prevCdf = CdfHist[i]
+        
+        plt.plot(PdfHist)
+        plt.show()
+        
+        otsuValue = 0
+        otsuMax = 0
+        
+        for i in range(1,255):
+            pdfMeans = np.zeros((2), dtype = 'float64')
+            #pdfVariances = np.zeros((2), dtype = 'float64')
+            
+            for k in range(0,i):
+                pdfMeans[0] += PdfHist[k]
+            if(i!= 0):
+                pdfMeans[0] /= i
+            
+            for k in range(i,256):
+                pdfMeans[1]+=PdfHist[k]
+            if((256-i) != 0):
+                pdfMeans[1]/= (256-i)
+            print(pdfMeans)
+            betweenClassVariance =  ((pdfMeans[0] - pdfMeans[1]) ** 2)* (CdfHist[i]) * (1 - CdfHist[i]) 
+            if (betweenClassVariance >= otsuMax):
+                otsuMax = betweenClassVariance
+                otsuValue = i
+        
+        return otsuValue
+            #for k in range(0,i):
+            #    #pdfVariances[0] += ((PdfHist[k] - pdfMeans[0])**2)
+            #if(i!= 0):
+            #    pdfVariances[0] /= i
+                
+            #for k in range(i,256):
+            #    pdfVariances[1] = ((PdfHist[k] - pdfMeans[1])**2)
+            #if((256-i) != 0):
+            #    pdfVariances[1]/= (256-i)
+            
+            #withinT = (CdfHist[i] * pdfVariances[0]) + ( (1 - CdfHist[i] ) * pdfVariances[1])
+            #if(withinT < otsuMin):
+            #    otsuMin = withinT
+            #    otsuValue = i
+        
+        
+    def thresholdImage(self,T):
+        h,w = self.inputImage.shape
+        thresImage = np.zeros((h,w) , dtype='uint8')
+        for x in range(h):
+            for y in range(w):
+                if ( self.inputImage[x,y] <= T ):
+                    thresImage[x,y] = 0
+                else:
+                    thresImage[x,y] = 255
+        
+        return thresImage
+            
+            
+            
+    def segmentationAction(self):
+        if(self.inputFile==''):
+            return
+        thresIndex = self.otsuThresholding()
+        thresImage = self.thresholdImage(thresIndex)
+        cv2.imwrite('threshold.jpg', thresImage)
+        
+        
     def GaussFilter(self):
         
         kernel = np.ones( (3,3), dtype='float64')
@@ -249,7 +331,7 @@ class Window(QMainWindow):
         for x in range(h):
             for y in range(w):
                 if R[x,y] > t:
-                    self.corners[x,y] = [244,0,0]
+                    self.corners[x,y] = [0,254,0]
                     print(str(x) + ' ' + str(y) + ' ' + str (R[x,y]))
        
         cv2.imwrite('resultA.jpg', self.corners)
