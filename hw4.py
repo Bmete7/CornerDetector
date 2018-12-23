@@ -164,8 +164,8 @@ class Window(QMainWindow):
             CdfHist[i] = prevCdf + PdfHist[i]
             prevCdf = CdfHist[i]
         
-        plt.plot(PdfHist)
-        plt.show()
+        #plt.plot(PdfHist)
+        #plt.show()
         
         otsuValue = 0
         otsuMax = 0
@@ -183,7 +183,6 @@ class Window(QMainWindow):
                 pdfMeans[1]+=PdfHist[k]
             if((256-i) != 0):
                 pdfMeans[1]/= (256-i)
-            print(pdfMeans)
             betweenClassVariance =  ((pdfMeans[0] - pdfMeans[1]) ** 2)* (CdfHist[i]) * (1 - CdfHist[i]) 
             if (betweenClassVariance >= otsuMax):
                 otsuMax = betweenClassVariance
@@ -211,7 +210,7 @@ class Window(QMainWindow):
         thresImage = np.zeros((h,w) , dtype='uint8')
         for x in range(h):
             for y in range(w):
-                if ( self.inputImage[x,y] <= T ):
+                if ( self.inputImage[x,y] <= T + 35 ):
                     thresImage[x,y] = 0
                 else:
                     thresImage[x,y] = 255
@@ -219,13 +218,106 @@ class Window(QMainWindow):
         return thresImage
             
             
+    def morphOperate(self,thresImage):
+        kernel = np.ones((5,5))
+        eroded = cv2.erode(thresImage,kernel,iterations = 6 )
+        cv2.imshow('1.' , eroded)
+        dilated = cv2.dilate(eroded,kernel,iterations = 4 )
+        return dilated
+    def maskImage(self,morphedImage):
+        h,w = self.inputImage.shape
+        maskedImage = self.inputImage.copy()
+        changedPoints = np.zeros((h,w),dtype='uint8')
+        for x in range(h):
+            for y in range(w):
+                if(morphedImage[x,y]==0):
+                    maskedImage[x,y]=0
+                    changedPoints[x,y]=1
+        return maskedImage,changedPoints
+    
+    def kMeans(self,maskedImage,changedPoints):
+        h,w = self.inputImage.shape
+        # selecting random initial points
+        randx = np.random.randint(0,h)
+        randy = np.random.randint(0,w)
+        while(changedPoints[randx,randy] == 1):
+            randx = np.random.randint(0,h)
+            randy = np.random.randint(0,w)
+        
+        randx_2 = np.random.randint(0,h)
+        randy_2 = np.random.randint(0,w)
+        
+        while(changedPoints[randx_2,randy_2] == 1 or (randx_2==randx and randy==randy_2)):
+            randx_2 = np.random.randint(0,h)
+            randy_2 = np.random.randint(0,w)
+        
+        print(str(randx) + ' ' + str(randy) + ' '+ str(maskedImage[randx,randy]))
+        print(str(randx_2) + ' ' + str(randy_2) +' '+   str(maskedImage[randx_2,randy_2]))
+        
+        classMeans = np.zeros((2,1), dtype='float64') # the mean of each class
+        classElements = np.zeros((2,1), dtype='int32') # how many elements belongs to that class
+        classMeans[0] = maskedImage[randx,randy]
+        classElements[0]+=1
+    
+        classMeans[1] = maskedImage[randx_2,randy_2]
+        classElements[1]+=1
+        
+        convergence = 20
+        clusters = np.zeros((h,w), dtype = 'uint8')
+        x=0
+        y=0
+        finished = np.sum(changedPoints)
+        while((classElements[0] + classElements[1]) < (finished) or convergence> 0.01):
+            if(x==h):
+                x=0
+                y+=1
+            if(y==w):
+                y=0
+            if(changedPoints[x,y] == 0 ):
+                retVal = self.calculateEuclidian(maskedImage[x,y], classMeans[0], classMeans[1])
+                
+                oldMean = classMeans[retVal]
+                classMeans[retVal] = ((classMeans[retVal]* classElements[retVal])+maskedImage[x,y]) / (classElements[retVal] + 1) 
+                convergence = classMeans[retVal] - oldMean
+                classElements[retVal] += 1
+                clusters[x,y] = 255 * retVal
             
+                print('Class Mean 1 ' + str(classMeans[0]))
+                print('Class Mean 2 ' + str(classMeans[1]))
+                print(classElements)
+                print('Class Elements 1 ' + str(classElements[0]))
+                print('Class Elements 2 ' + str(classElements[1]))
+            x += 1 
+            
+        cv2.imshow('clust', clusters)
+    def calculateEuclidian(self,v1,v2,v3):
+        d1 = np.abs(v1-v2)
+        d2 = np.abs(v1-v3)
+        if(d1 < d2):
+            return 0
+        else:
+            return 1
+        
+    
+    
+    
+    
+    
     def segmentationAction(self):
         if(self.inputFile==''):
             return
+        
         thresIndex = self.otsuThresholding()
         thresImage = self.thresholdImage(thresIndex)
         cv2.imwrite('threshold.jpg', thresImage)
+        morphedImage = self.morphOperate(thresImage)
+        maskedImage,changedPoints = self.maskImage(morphedImage)
+        kMean = self.kMeans(maskedImage,changedPoints)
+        
+        
+        cv2.imshow('2-Morphed.', morphedImage)
+        cv2.imshow('3-Masked.', maskedImage)
+        
         
         
     def GaussFilter(self):
