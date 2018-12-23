@@ -218,12 +218,12 @@ class Window(QMainWindow):
         return thresImage
             
             
-    def morphOperate(self,thresImage):
+    def morphOperate(self,thresImage,iter):
         kernel = np.ones((5,5))
-        eroded = cv2.erode(thresImage,kernel,iterations = 6 )
-        cv2.imshow('1.' , eroded)
-        dilated = cv2.dilate(eroded,kernel,iterations = 4 )
+        eroded = cv2.erode(thresImage,kernel,iterations = (iter+2) )
+        dilated = cv2.dilate(eroded,kernel,iterations = iter )
         return dilated
+    
     def maskImage(self,morphedImage):
         h,w = self.inputImage.shape
         maskedImage = self.inputImage.copy()
@@ -264,15 +264,40 @@ class Window(QMainWindow):
         
         convergence = 20
         clusters = np.zeros((h,w), dtype = 'uint8')
-        x=0
-        y=0
+      
         finished = np.sum(changedPoints)
+        
+        leastMasked_h = h-1
+        leastMasked_w = w-1
+        maxMasked_h = 0
+        maxMasked_w = 0
+        print(leastMasked_h)
+        print(leastMasked_w)
+        print(maxMasked_h)
+        print(maxMasked_w)
+        for x in range(h):
+            for y in range(w):
+                if(changedPoints[x,y] == 0):
+                    if(x < leastMasked_h):
+                        leastMasked_h = x
+                    if(x > maxMasked_h):
+                        maxMasked_h = x
+                    if(y < leastMasked_w):
+                        leastMasked_w = y
+                    if(y > maxMasked_w):
+                        maxMasked_w = y       
+        print(leastMasked_h)
+        print(leastMasked_w)
+        print(maxMasked_h)
+        print(maxMasked_w)
+        x=leastMasked_h
+        y=leastMasked_w
         while((classElements[0] + classElements[1]) < (finished) or convergence> 0.01):
-            if(x==h):
-                x=0
+            if(x==maxMasked_h):
+                x=leastMasked_h
                 y+=1
-            if(y==w):
-                y=0
+            if(y==maxMasked_w):
+                y=leastMasked_w
             if(changedPoints[x,y] == 0 ):
                 retVal = self.calculateEuclidian(maskedImage[x,y], classMeans[0], classMeans[1])
                 
@@ -282,14 +307,37 @@ class Window(QMainWindow):
                 classElements[retVal] += 1
                 clusters[x,y] = 255 * retVal
             
-                print('Class Mean 1 ' + str(classMeans[0]))
-                print('Class Mean 2 ' + str(classMeans[1]))
-                print(classElements)
-                print('Class Elements 1 ' + str(classElements[0]))
-                print('Class Elements 2 ' + str(classElements[1]))
+#                print('Class Mean 1 ' + str(classMeans[0]))
+#                print('Class Mean 2 ' + str(classMeans[1]))
+#                print(classElements)
+#                print('Class Elements 1 ' + str(classElements[0]))
+#                print('Class Elements 2 ' + str(classElements[1]))
             x += 1 
-            
-        cv2.imshow('clust', clusters)
+        
+        tumorCount = 0
+        brainCount = 0
+        for x in range(h):
+            for y in range(w):
+                if(changedPoints[x,y] == 0):
+                    if(clusters[x,y] == 0 ):
+                        tumorCount += 1
+                    else:
+                        brainCount += 1
+        if(tumorCount > brainCount):
+            return clusters
+        
+        if(brainCount > tumorCount):
+            for x in range(h):
+                for y in range(w):
+                    if(changedPoints[x,y] == 0):
+                        if(clusters[x,y] == 0 ):
+                            clusters[x,y] = 255
+                        else:
+                            clusters[x,y] = 0
+                        
+                
+        return clusters
+
     def calculateEuclidian(self,v1,v2,v3):
         d1 = np.abs(v1-v2)
         d2 = np.abs(v1-v3)
@@ -297,12 +345,25 @@ class Window(QMainWindow):
             return 0
         else:
             return 1
-        
-    
-    
-    
-    
-    
+    def edgeFinder(self,cluster):
+        h,w = cluster.shape
+        edges = cluster.copy()
+        edgeImage = np.zeros((h,w,3), dtype='uint8')
+        edgeImage[:,:,0] = self.inputImage
+        edgeImage[:,:,1] = self.inputImage
+        edgeImage[:,:,2] = self.inputImage
+        for x in range(1,h-1):
+            for y in range(1,w-1):
+                if(cluster[x,y] == 255):
+                    if(cluster[x+1,y] == 255 and cluster[x,y+1] == 255 and cluster[x-1,y] == 255 and cluster[x,y-1] == 255):
+                        edges[x,y] = 0
+                    else:
+                        edges[x,y] = 255
+                        edgeImage[x,y,0] = 20
+                        edgeImage[x,y,1] = 20
+                        edgeImage[x,y,2] = 222
+        return edges,edgeImage
+
     def segmentationAction(self):
         if(self.inputFile==''):
             return
@@ -310,14 +371,25 @@ class Window(QMainWindow):
         thresIndex = self.otsuThresholding()
         thresImage = self.thresholdImage(thresIndex)
         cv2.imwrite('threshold.jpg', thresImage)
-        morphedImage = self.morphOperate(thresImage)
+        morphedImage = self.morphOperate(thresImage,4)
         maskedImage,changedPoints = self.maskImage(morphedImage)
         kMean = self.kMeans(maskedImage,changedPoints)
         
         
         cv2.imshow('2-Morphed.', morphedImage)
         cv2.imshow('3-Masked.', maskedImage)
+        cv2.imshow('4- Cluster', kMean)
+        kernel = np.ones((3,3))
+        eroded = cv2.erode(kMean,kernel,iterations = 2)
+        clusters_dilated = cv2.dilate(eroded,kernel,iterations = 2)
+        cv2.imshow('5. Dilated Cluster' , clusters_dilated)
+        edges, edgeIm = self.edgeFinder(clusters_dilated)
+        cv2.imshow('7. Edge Boundaries' , edges)
+        cv2.imshow('6. Segmentation Image' , edgeIm)
         
+        cv2.imwrite('segmented.png', edgeIm)
+        self.content = ExampleContent(self, 'processed.png','segmented.png')
+        self.setCentralWidget(self.content)
         
         
     def GaussFilter(self):
